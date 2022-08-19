@@ -5,6 +5,8 @@
 #include "rxmesh/kernels/query_dispatcher.cuh"
 #include "rxmesh/types.h"
 
+#include "tinymatwriter.h"
+
 namespace rxmesh {
 
 namespace detail {
@@ -219,6 +221,7 @@ struct SparseMatInfo
           m_d_val(nullptr),
           m_nnz_entry_size(0)
     {
+        m_num_rows = rx.get_num_vertices();
         detail::patch_ptr_init(rx,
                                m_d_patch_ptr_v,
                                m_d_patch_ptr_e,
@@ -250,11 +253,43 @@ struct SparseMatInfo
         CUDA_ERROR(cudaFree(m_d_val));
     }
 
+    void writeMAT(std::string filename)
+    {
+        TinyMATWriterFile*    file = TinyMATWriter_open(filename.c_str());
+        std::vector<uint32_t> h_row_ptr(m_num_rows + 1);
+        std::vector<uint32_t> h_col_idx(m_nnz_entry_size);
+        std::vector<T>        h_val(m_nnz_entry_size);
+        CUDA_ERROR(cudaMemcpy(h_row_ptr.data(),
+                              m_d_row_ptr,
+                              (m_num_rows + 1) * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(h_col_idx.data(),
+                              m_d_col_idx,
+                              m_nnz_entry_size * sizeof(uint32_t),
+                              cudaMemcpyDeviceToHost));
+        CUDA_ERROR(cudaMemcpy(h_val.data(),
+                              m_d_val,
+                              m_nnz_entry_size * sizeof(T),
+                              cudaMemcpyDeviceToHost));
+        std::vector<double> mat(m_num_rows * m_num_rows, 0);
+        for (uint32_t r = 0; r < m_num_rows; ++r) {
+            for (int i = h_row_ptr[r]; i < h_row_ptr[r + 1]; i++) {
+                uint32_t c              = h_col_idx[i];
+                mat[r * m_num_rows + c] = -1.0 * double(h_val[i]);
+            }
+            mat[r * m_num_rows + r] = 10.0;
+        }
+        TinyMATWriter_writeMatrix2D_rowmajor(
+            file, "matirxXx", mat.data(), m_num_rows, m_num_rows);
+        TinyMATWriter_close(file);
+    }
+
     uint32_t *m_d_patch_ptr_v, *m_d_patch_ptr_e, *m_d_patch_ptr_f;
     uint32_t* m_d_row_ptr;
     uint32_t* m_d_col_idx;
     T*        m_d_val;
     uint32_t  m_nnz_entry_size;
+    uint32_t  m_num_rows;
 };
 
 }  // namespace rxmesh

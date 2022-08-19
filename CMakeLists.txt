@@ -68,6 +68,13 @@ FetchContent_Declare(polyscope
 FetchContent_MakeAvailable(polyscope)
 endif()
 
+#TinyMAT
+FetchContent_Declare(tinymat
+    GIT_REPOSITORY https://github.com/Ahdhn/TinyMAT.git
+    GIT_TAG        5c03a3baad6c7d7832499ec5cb0b04a24a342eb3
+)
+FetchContent_MakeAvailable(tinymat)
+
 # Auto-detect GPU architecture, sets ${CUDA_ARCHS}
 include("cmake/AutoDetectCudaArch.cmake")
 
@@ -140,6 +147,8 @@ target_link_libraries(RXMesh_header_lib INTERFACE $<BUILD_INTERFACE:developer_fl
 if (USE_POLYSCOPE)
 	target_link_libraries(RXMesh_header_lib INTERFACE polyscope)	
 endif()
+
+target_link_libraries(RXMesh_header_lib INTERFACE TinyMAT)	
 
 #OpenMP
 find_package(OpenMP)

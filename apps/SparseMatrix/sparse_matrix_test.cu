@@ -8,9 +8,11 @@
 #include "sparse_matrix.cuh"
 
 template <uint32_t blockThreads>
-__global__ static void sparse_mat_test(const rxmesh::Context context,
-                                       uint32_t*             patch_ptr_v,
-                                       uint32_t*             vet_degree)
+__global__ static void sparse_mat_test(
+    const rxmesh::Context          context,
+    uint32_t*                      patch_ptr_v,
+    uint32_t*                      vet_degree,
+    rxmesh::VertexAttribute<float> vertex_color)
 {
     using namespace rxmesh;
 
@@ -24,6 +26,24 @@ __global__ static void sparse_mat_test(const rxmesh::Context context,
         uint32_t patch_id                            = ids.first;
         uint16_t local_id                            = ids.second;
         vet_degree[patch_ptr_v[patch_id] + local_id] = iter.size() + 1;
+
+        bool is_sep = false;
+        for (uint32_t i = 0; i < iter.size(); ++i) {
+            auto vv = iter[i];
+            if (vv.unpack().first != patch_id) {
+                is_sep = true;
+            } 
+        }
+
+        if (is_sep) {
+            vertex_color(v_id, 0) = 0.1;
+            vertex_color(v_id, 1) = 0.1;
+            vertex_color(v_id, 2) = 0.1;
+        } else {
+            vertex_color(v_id, 0) = 0.9;
+            vertex_color(v_id, 1) = 0.9;
+            vertex_color(v_id, 2) = 0.9;
+        }
     };
 
     query_block_dispatcher<Op::VV, blockThreads>(context, init_lambda);
@@ -111,7 +131,7 @@ TEST(Apps, SparseMatrix)
     cuda_query(0);
 
     // generate rxmesh obj
-    std::string  obj_path = STRINGIFY(INPUT_DIR) "sphere3.obj";
+    std::string  obj_path = STRINGIFY(INPUT_DIR) "davidhead.obj";
     RXMeshStatic rxmesh(obj_path);
 
     uint32_t num_vertices = rxmesh.get_num_vertices();
@@ -134,6 +154,8 @@ TEST(Apps, SparseMatrix)
     SparseMatInfo<int> spmat(rxmesh);
     spmat.set_ones();
 
+    auto vertex_color = *rxmesh.add_vertex_attribute<float>("vColor", 3);
+
     spmat_multi_hardwired_kernel<<<blocks, threads>>>(
         d_arr_ones, spmat, d_result, num_vertices);
 
@@ -153,7 +175,7 @@ TEST(Apps, SparseMatrix)
     sparse_mat_test<threads><<<launch_box.blocks,
                                launch_box.num_threads,
                                launch_box.smem_bytes_dyn>>>(
-        rxmesh.get_context(), spmat.m_d_patch_ptr_v, vet_degree);
+        rxmesh.get_context(), spmat.m_d_patch_ptr_v, vet_degree, vertex_color);
 
     std::vector<uint32_t> h_vet_degree(num_vertices);
     CUDA_ERROR(cudaMemcpy(
@@ -162,6 +184,19 @@ TEST(Apps, SparseMatrix)
     for (uint32_t i = 0; i < num_vertices; ++i) {
         EXPECT_EQ(h_result[i], h_vet_degree[i]);
     }
+
+
+    //polyscope::view::upDir = polyscope::UpDir::ZUp;
+    polyscope::init();
+    auto polyscope_mesh = rxmesh.get_polyscope_mesh();
+    vertex_color.move(rxmesh::DEVICE, rxmesh::HOST);
+    polyscope_mesh->setEdgeWidth(1.0);
+    polyscope_mesh->addVertexColorQuantity("vSeperator", vertex_color);
+    rxmesh.polyscope_render_face_patch();
+    polyscope::show();
+
+    // spmat.writeMAT(extract_file_name(obj_path) + ".mat");
+
 
     spmat.free();
 }

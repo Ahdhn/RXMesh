@@ -190,7 +190,8 @@ class Patcher
 
     uint32_t construct_patches_compressed_format();
 
-    void run_lloyd();
+    void run_lloyd(const std::vector<uint32_t>& ff_offset,
+                   const std::vector<uint32_t>& ff_values);
 
 
     uint32_t m_patch_size, m_num_patches, m_num_vertices, m_num_edges,
